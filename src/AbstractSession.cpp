@@ -7,6 +7,7 @@
 
 #include <QClipboard>
 #include <QMimeData>
+#include <QUrl>
 
 #include <KSystemClipboard>
 
@@ -47,16 +48,26 @@ AbstractSession::AbstractSession()
             return;
         }
 
-        // text only, arbitrary MIME payloads can block on Wayland/XWayland targets (SAVE_TARGETS)
+        // text and copied local files only, arbitrary MIME payloads can block on Wayland/XWayland targets (SAVE_TARGETS)
         const QString text = data->hasText() ? data->text() : QString();
-        if (!data->hasText()) {
-            qCDebug(KRDP) << "Ignoring non-text clipboard update with formats" << data->formats();
+        QList<QUrl> files;
+        if (data->hasUrls()) {
+            const auto urls = data->urls();
+            std::copy_if(urls.cbegin(), urls.cend(), std::back_inserter(files), [](const QUrl &url) {
+                return url.isLocalFile();
+            });
+        }
+        if (!data->hasText() && files.isEmpty()) {
+            qCDebug(KRDP) << "Ignoring clipboard update with formats" << data->formats();
         }
 
         // KSystemClipboard keeps ownership of what it returns, copy into a new QMimeData
         auto newData = new QMimeData();
         if (!text.isEmpty()) {
             newData->setText(text);
+        }
+        if (!files.isEmpty()) {
+            newData->setUrls(files);
         }
 
         Q_EMIT clipboardDataChanged(newData);
