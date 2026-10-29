@@ -171,6 +171,11 @@ void SessionController::switchToGreeter()
     });
 }
 
+void SessionController::setRestoreSize(const QSize &size)
+{
+    m_resizer->setRestoreSize(size);
+}
+
 void SessionController::setMonitorIndex(const std::optional<int> &index)
 {
     m_monitorIndex = index;

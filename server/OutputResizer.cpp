@@ -373,12 +373,31 @@ void OutputResizer::switchMode(const KScreen::ConfigPtr &config,
     });
 }
 
+void OutputResizer::setRestoreSize(const QSize &size)
+{
+    m_restoreSize = size;
+    if (size.isValid() && m_owners.isEmpty() && !m_original) {
+        switchBack(QString(), size, 60.0, {}, false);
+    }
+}
+
 void OutputResizer::restore(bool blocking)
 {
     const Original original = *m_original;
     const QList<QSize> customSizes = m_customSizes;
     m_original.reset();
     m_customSizes.clear();
+    switchBack(original.outputName, m_restoreSize.isValid() ? m_restoreSize : original.size, original.refreshRate, customSizes, blocking);
+}
+
+/**
+ * Switch the output called @p outputName, or the one we would stream if that is empty, to a mode
+ * of @p size, and remove the custom modes of @p customSizes we added to it.
+ */
+void OutputResizer::switchBack(const QString &outputName, const QSize &size, float refreshRate, const QList<QSize> &customSizes, bool blocking)
+{
+    // only the original mode has to exist exactly, a restore size is what the user would like
+    const bool nearest = m_restoreSize.isValid();
 
     QEventLoop loop;
     auto done = [blocking, &loop]() {
@@ -389,16 +408,24 @@ void OutputResizer::restore(bool blocking)
 
     // The operations are never used once they have finished, they delete themselves.
     auto get = new KScreen::GetConfigOperation(KScreen::GetConfigOperation::NoEDID);
-    connect(get, &KScreen::GetConfigOperation::finished, this, [original, customSizes, done](KScreen::ConfigOperation *op) {
+    connect(get, &KScreen::GetConfigOperation::finished, this, [outputName, size, refreshRate, customSizes, nearest, done](KScreen::ConfigOperation *op) {
         if (op->hasError()) {
             done();
             return;
         }
         auto newConfig = op->config()->clone();
+        const auto streamed = outputName.isEmpty() ? findStreamedOutput(newConfig, QSize()) : KScreen::OutputPtr();
         bool changed = false;
         const auto outputs = newConfig->outputs();
         for (const auto &output : outputs) {
-            const auto mode = output->name() == original.outputName ? exactMode(output, original.size, original.refreshRate) : KScreen::ModePtr();
+            if (outputName.isEmpty() ? output != streamed : output->name() != outputName) {
+                continue;
+            }
+            const QSize target = nearest ? clampToOutput(output, size) : size;
+            auto mode = exactMode(output, target, refreshRate);
+            if (!mode && nearest) {
+                mode = nearestMode(output, target);
+            }
             if (!mode || mode->id() == output->currentModeId()) {
                 continue;
             }

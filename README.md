@@ -18,7 +18,9 @@
 > - **Window resizing.** When a real output is shared, its video mode follows the size the
 >   client asks for (DisplayControl), exactly, using custom modes where needed. The original mode
 >   is restored on disconnect. A logon notification is sent after authentication, which Hyper-V
->   needs before it allows resizing the window.
+>   needs before it allows resizing the window. `RestoreSize=1920x1080` (`--restore-size`) switches
+>   to that size instead when the last client has gone and when the server starts, so a basic
+>   (non-enhanced) console doesn't stay at the size of an earlier enhanced session.
 > - **Protocol fixes.** Inclusive monitor coordinates in ResetGraphics, and the desktop is sent
 >   again when the client asks for it (Refresh Rect, output allowed again after Suppress Output).
 > - **File copy over the clipboard**, in both directions (FileGroupDescriptorW / FileContents).

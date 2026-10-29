@@ -42,6 +42,7 @@ public:
     void setVirtualMonitor(const KRdp::VirtualMonitor &vm);
     void setMonitorIndex(const std::optional<int> &index);
     void setQuality(const std::optional<int> &quality);
+    void setRestoreSize(const QSize &size);
     void setAdaptiveQuality(bool adaptive);
     OperationMode operationMode() const;
     void setOperationMode(OperationMode mode);

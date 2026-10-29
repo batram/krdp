@@ -62,6 +62,9 @@ int main(int argc, char **argv)
          u"Also listen on this AF_VSOCK port (3389 for Hyper-V enhanced sessions). Uses RDP security without encryption. Disabled by default."_s,
          u"port"_s},
         {u"vsock-trust-host"_s, u"Accept vsock clients that supply no credentials as the user running the server (Hyper-V sends an empty login)."_s},
+        {u"restore-size"_s,
+         u"When a client has resized the output, switch it to this size (WIDTHxHEIGHT) once the last client has gone instead of back to the mode it had, and also when the server starts."_s,
+         u"size"_s},
         {u"certificate"_s, u"The TLS certificate file to use."_s, u"certificate"_s, u"server.crt"_s},
         {u"certificate-key"_s, u"The TLS certificate key to use."_s, u"certificate-key"_s, u"server.key"_s},
         {u"monitor"_s, u"The index of the monitor to use when streaming."_s, u"monitor"_s, u"-1"_s},
@@ -165,6 +168,15 @@ int main(int argc, char **argv)
         controller.setVirtualMonitor({vmData, {match.capturedView(1).toInt(), match.capturedView(2).toInt()}, match.capturedView(3).toDouble()});
     } else {
         controller.setMonitorIndex(parser.isSet(u"monitor"_s) ? std::optional(parser.value(u"monitor"_s).toInt()) : std::nullopt);
+    }
+    const QString restoreSize = parserValueWithDefault(u"restore-size", config->restoreSize());
+    if (!restoreSize.isEmpty()) {
+        const auto match = QRegularExpression(uR"(^(\d+)x(\d+)$)"_s).match(restoreSize);
+        if (!match.hasMatch()) {
+            qWarning() << "failed to parse restore size" << restoreSize << ". Should be WIDTHxHEIGHT";
+            return 1;
+        }
+        controller.setRestoreSize({match.capturedView(1).toInt(), match.capturedView(2).toInt()});
     }
     controller.setQuality(parserValueWithDefault(u"quality", config->quality()));
     controller.setAdaptiveQuality((parser.isSet(u"adaptive-quality"_s) || config->adaptiveQuality()) && !parser.isSet(u"static-quality"_s));

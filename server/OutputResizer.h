@@ -21,7 +21,7 @@
  *
  * Virtual monitors can be resized through the screencast stream itself; this is
  * for sessions that share a real output. The original mode is restored once the
- * last client that asked for a size has gone.
+ * last client that asked for a size has gone, or the restore size if one is set.
  */
 class OutputResizer : public QObject
 {
@@ -45,6 +45,14 @@ public:
     void release(const void *owner);
 
     /**
+     * Switch to a mode of @p size instead of the original one when the last client has gone.
+     *
+     * Also switches the output to it right away if no client is connected, as the mode the
+     * output starts with may still be one a client asked for before the session ended.
+     */
+    void setRestoreSize(const QSize &size);
+
+    /**
      * Emitted when a change has been applied and no further one is waiting.
      */
     Q_SIGNAL void idle();
@@ -62,11 +70,13 @@ private:
     void apply(const QSize &wanted, const std::shared_ptr<void> &done);
     void switchMode(const KScreen::ConfigPtr &config, const QString &outputName, const QString &modeId, const QSize &wanted, const std::shared_ptr<void> &done);
     void restore(bool blocking);
+    void switchBack(const QString &outputName, const QSize &size, float refreshRate, const QList<QSize> &customSizes, bool blocking);
 
     QTimer m_timer;
     QSet<const void *> m_owners;
     QSize m_pendingSize;
     QSize m_streamSize;
+    QSize m_restoreSize;
     bool m_busy = false;
     bool m_dirty = false;
     bool m_restorePending = false;
