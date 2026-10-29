@@ -59,6 +59,13 @@ public:
     void close();
     Q_SIGNAL void closed();
     Q_SIGNAL void sizeChanged(const QSize &size);
+    /**
+     * The size of the desktop the client has, which the positions in its input are relative to.
+     *
+     * This follows sizeChanged(), but only once the client has been told about the new size,
+     * which is when the first frame of that size is sent. Can be emitted from any thread.
+     */
+    Q_SIGNAL void desktopSizeChanged(const QSize &size);
     Q_SIGNAL void cursorChanged(const PipeWireCursor &cursor);
 
     /**
@@ -93,6 +100,15 @@ public:
      * The desktop size the client asked for, if it has told us yet.
      */
     QSize requestedSize() const;
+    /**
+     * The size of the desktop the client has, if it is known yet. Can be called from any thread.
+     */
+    QSize desktopSize() const;
+    /**
+     * Set the size of the desktop the client has, for when it is told outside of the video stream,
+     * like when it connects. Can be called from any thread.
+     */
+    void setDesktopSize(const QSize &size);
 
     /**
      * Drop frames that are not of @p size, until one is or @p timeout has passed.

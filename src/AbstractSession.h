@@ -44,6 +44,9 @@ public:
     quint32 nodeId() const;
     int takePipeWireFd();
 
+    /**
+     * Set the size of the desktop on the client, which the positions of input events are relative to.
+     */
     void setSize(QSize size);
 
     quint64 objectSerial() const;

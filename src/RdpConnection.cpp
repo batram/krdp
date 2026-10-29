@@ -714,6 +714,11 @@ static std::optional<quint8> qualitySeedForConnectionType(uint32_t connectionTyp
 
 bool RdpConnection::onActivate()
 {
+    // The client's input is relative to the desktop size it connected with, until the
+    // video stream sends a different one. Set it before the session is created for this state.
+    const auto settings = d->peer->context->settings;
+    d->videoStream->setDesktopSize(
+        QSize(freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth), freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight)));
     setState(State::Activated);
 
     if (!d->qualitySeeded) {

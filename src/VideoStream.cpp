@@ -171,6 +171,8 @@ public:
     // packed width and height of the only frames to accept for now, or 0
     std::atomic<quint64> expectedFrameSize{0};
     std::atomic<clk::steady_clock::rep> expectedFrameDeadline{0};
+    // packed width and height of the desktop the client has, or 0
+    std::atomic<quint64> desktopSize{0};
     clk::steady_clock::time_point lastFullRefresh;
 
     std::atomic_int requestedFrameRate = 60;
@@ -545,6 +547,19 @@ void VideoStream::setExpectedFrameSize(const QSize &size, std::chrono::milliseco
     d->expectedFrameSize = size.isValid() ? (quint64(size.width()) << 32 | quint32(size.height())) : 0;
 }
 
+QSize VideoStream::desktopSize() const
+{
+    const quint64 size = d->desktopSize.load();
+    return size ? QSize(int(size >> 32), int(quint32(size))) : QSize();
+}
+
+void VideoStream::setDesktopSize(const QSize &size)
+{
+    qCDebug(KRDP) << "Client desktop size is" << size;
+    d->desktopSize = size.isValid() ? (quint64(size.width()) << 32 | quint32(size.height())) : 0;
+    Q_EMIT desktopSizeChanged(size);
+}
+
 void VideoStream::setRequestedSize(const QSize &size)
 {
     d->surface->setRequestedSize(size);
@@ -759,6 +774,7 @@ void VideoStream::performReset(QSize newSize)
         freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, newSize.height());
         d->session->rdpPeerContext()->update->DesktopResize(d->session->rdpPeerContext());
         surface.size = newSize;
+        setDesktopSize(newSize);
         return;
     }
 
@@ -782,6 +798,7 @@ void VideoStream::performReset(QSize newSize)
         qCWarning(KRDP) << "ResetGraphics failed" << status << "for size" << newSize;
         return;
     }
+    setDesktopSize(newSize);
 
     RDPGFX_CREATE_SURFACE_PDU createSurfacePdu;
     createSurfacePdu.width = newSize.width();

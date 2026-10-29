@@ -62,6 +62,7 @@ public:
                 .scale = static_cast<qreal>(ei_region_get_physical_scale(eiRegion)),
             };
             const auto mappingId = ei_region_get_mapping_id(eiRegion);
+            qCDebug(KRDP) << "Pointer device region" << region.rect << "mapping" << mappingId;
             if (mappingId) {
                 m_regions.insert(QString::fromUtf8(mappingId), region);
             }
@@ -180,10 +181,6 @@ void EiConnection::sendEvent(const std::shared_ptr<QEvent> &event, const QSize &
             qCWarning(KRDP) << "Mouse move event received but no pointer devices are available.";
             return;
         }
-        if (streamSize.isEmpty()) {
-            qCWarning(KRDP) << "Mouse move event received but stream size is unknown.";
-            return;
-        }
         auto me = std::static_pointer_cast<QMouseEvent>(event);
 
         EisPointerDevice *pointerDevice;
@@ -194,6 +191,11 @@ void EiConnection::sendEvent(const std::shared_ptr<QEvent> &event, const QSize &
             const auto mappedPointerDevice = findPointerDeviceForMappingId(mappingId);
             if (!mappedPointerDevice) {
                 qCWarning(KRDP) << "Mouse move event whilst screen has explicit mapping, but no associated device found.";
+                return;
+            }
+
+            if (streamSize.isEmpty()) {
+                qCWarning(KRDP) << "Mouse move event received but stream size is unknown.";
                 return;
             }
 
