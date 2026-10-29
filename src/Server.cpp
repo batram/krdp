@@ -120,7 +120,8 @@ bool Server::startVsock()
                 return;
             }
             qCDebug(KRDP) << "Accepted vsock connection from CID" << peer.svm_cid << "port" << peer.svm_port;
-            addConnection(client, true);
+            auto session = std::make_unique<RdpConnection>(this, client, true, peer.svm_cid);
+            addConnection(std::move(session));
         }
     });
 
@@ -247,12 +248,11 @@ void Server::setTlsCertificateKey(const std::filesystem::path &newTlsCertificate
 
 void Server::incomingConnection(qintptr handle)
 {
-    addConnection(handle, false);
+    addConnection(std::make_unique<RdpConnection>(this, handle));
 }
 
-void Server::addConnection(qintptr handle, bool vsock)
+void Server::addConnection(std::unique_ptr<RdpConnection> session)
 {
-    auto session = std::make_unique<RdpConnection>(this, handle, vsock);
     auto sessionPtr = session.get();
     // queued: signal comes from the run thread, and it keeps the erase below from destroying the sender mid-emission
     connect(

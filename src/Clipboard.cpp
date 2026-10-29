@@ -515,6 +515,11 @@ void Clipboard::Private::startIncomingTransfer(const QByteArray &fileList)
         file.directory = (descriptor.dwFlags & FD_ATTRIBUTES) && (descriptor.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
         if (!file.directory && (descriptor.dwFlags & FD_FILESIZE)) {
             file.size = quint64(descriptor.nFileSizeHigh) << 32 | descriptor.nFileSizeLow;
+            if (*file.size > MaximumIncomingSize - totalSize) {
+                qCWarning(KRDP) << "Not taking copied files from the client, they exceed" << MaximumIncomingSize << "bytes";
+                free(descriptors);
+                return;
+            }
             totalSize += *file.size;
         }
         transfer->files.append(file);
@@ -641,6 +646,10 @@ uint32_t Clipboard::Private::onClientFileContentsResponse(const CLIPRDR_FILE_CON
         }
         quint64 size = 0;
         memcpy(&size, response->requestedData, sizeof(size)); // little endian, like us
+        if (size > MaximumIncomingSize - transfer.received) {
+            abortIncomingTransfer(u"the file exceeds the clipboard transfer size limit"_s);
+            return CHANNEL_RC_OK;
+        }
         entry.size = size;
         if (size == 0) {
             fetchNextFile();
@@ -652,6 +661,10 @@ uint32_t Clipboard::Private::onClientFileContentsResponse(const CLIPRDR_FILE_CON
 
     const quint64 remaining = *entry.size - transfer.offset;
     const quint64 length = std::min<quint64>(response->cbRequested, remaining);
+    if (transfer.received > MaximumIncomingSize || length > MaximumIncomingSize - transfer.received) {
+        abortIncomingTransfer(u"the clipboard transfer size limit was reached"_s);
+        return CHANNEL_RC_OK;
+    }
     if (length == 0 || !response->requestedData) {
         abortIncomingTransfer(u"the client sent no file contents"_s);
         return CHANNEL_RC_OK;

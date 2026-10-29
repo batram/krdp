@@ -13,6 +13,7 @@
 #include <optional>
 
 #include <fcntl.h>
+#include <linux/vm_sockets.h>
 
 #include <QHostAddress>
 #include <QStandardPaths>
@@ -285,6 +286,7 @@ public:
 
     qintptr socketHandle;
     bool vsock = false;
+    uint32_t vsockPeerCid = UINT32_MAX;
 
     std::unique_ptr<InputHandler> inputHandler;
     std::unique_ptr<VideoStream> videoStream;
@@ -315,13 +317,14 @@ public:
     QTemporaryFile samFile;
 };
 
-RdpConnection::RdpConnection(Server *server, qintptr socketHandle, bool vsock)
+RdpConnection::RdpConnection(Server *server, qintptr socketHandle, bool vsock, uint32_t vsockPeerCid)
     : QObject(nullptr)
     , d(std::make_unique<Private>())
 {
     d->server = server;
     d->socketHandle = socketHandle;
     d->vsock = vsock;
+    d->vsockPeerCid = vsockPeerCid;
 
     d->inputHandler = std::make_unique<InputHandler>(this);
     d->videoStream = std::make_unique<VideoStream>(this);
@@ -764,11 +767,11 @@ bool RdpConnection::authenticateClient()
         // Plain RDP security has no NLA, so the credentials from the Client Info PDU are all there is.
         const QString password = QString::fromUtf8(freerdp_settings_get_string(settings, FreeRDP_Password));
         if (username.isEmpty() && password.isEmpty()) {
-            if (d->server->vsockTrustHost()) {
+            if (d->server->vsockTrustHost() && d->vsockPeerCid == VMADDR_CID_HOST) {
                 qCInfo(KRDP) << "Accepting vsock client without credentials (vsock host is trusted)";
                 return true;
             }
-            qCWarning(KRDP) << "Rejecting vsock client without credentials; start with --vsock-trust-host to accept the Hyper-V host";
+            qCWarning(KRDP) << "Rejecting vsock client without credentials from CID" << d->vsockPeerCid;
             return false;
         }
         return authenticate(username, password, d->server->usePAMAuthentication(), d->server->users());

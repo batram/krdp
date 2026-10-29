@@ -69,6 +69,7 @@ private:
     QSize m_streamSize;
     bool m_busy = false;
     bool m_dirty = false;
+    bool m_restorePending = false;
 
     struct Original {
         QString outputName;

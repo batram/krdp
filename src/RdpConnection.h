@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <thread>
 
@@ -69,8 +70,9 @@ public:
      *                     for communication.
      * \param vsock Whether the socket is an AF_VSOCK (Hyper-V) connection,
      *              which uses plain RDP security instead of TLS/NLA.
+     * \param vsockPeerCid The peer CID returned by accept4 for a vsock socket.
      */
-    explicit RdpConnection(Server *server, qintptr socketHandle, bool vsock = false);
+    explicit RdpConnection(Server *server, qintptr socketHandle, bool vsock = false, uint32_t vsockPeerCid = UINT32_MAX);
     ~RdpConnection() override;
 
     /**

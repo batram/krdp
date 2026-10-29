@@ -167,6 +167,7 @@ void OutputResizer::requestSize(const void *owner, const QSize &size, const QSiz
         return;
     }
     m_owners.insert(owner);
+    m_restorePending = false;
     m_pendingSize = size;
     m_dirty = true;
     // keep the first stream size: once we changed the mode, the stream is no longer that size
@@ -186,7 +187,10 @@ void OutputResizer::release(const void *owner)
     if (m_owners.isEmpty()) {
         m_timer.stop();
         m_dirty = false;
-        if (m_original) {
+        if (m_busy) {
+            // The in-flight change may not have recorded the original mode yet.
+            m_restorePending = true;
+        } else if (m_original) {
             restore(false);
         }
     }
@@ -212,6 +216,13 @@ void OutputResizer::startApply()
 void OutputResizer::applyFinished()
 {
     m_busy = false;
+    if (m_owners.isEmpty() && m_restorePending) {
+        m_restorePending = false;
+        if (m_original) {
+            restore(false);
+        }
+        return;
+    }
     if (m_dirty && !m_timer.isActive()) {
         startApply();
     } else if (!m_dirty) {
