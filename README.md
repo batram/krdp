@@ -1,3 +1,37 @@
+> [!NOTE]
+> **This is an unofficial fork of [KRdp](https://invent.kde.org/plasma/krdp)**, based on the
+> 6.8.2 release, with changes for using KRdp as the server for **Hyper-V enhanced sessions**
+> (Virtual Machine Connection) on a Plasma Wayland guest. It is not affiliated with or
+> supported by KDE. The upstream code is unchanged otherwise; the `master` branch mirrors
+> upstream.
+>
+> Changes in this fork:
+>
+> - **Hyper-V socket (AF_VSOCK) support.** `krdpserver --vsock-port 3389` (or `VsockPort=3389`
+>   in `krdpserverrc`) also listens on the vsock port Hyper-V connects to. These connections use
+>   RDP security without encryption, as Hyper-V does not use TLS on that link. Hyper-V sends an
+>   empty login; `--vsock-trust-host` (`VsockTrustHost=true`) accepts that as the user running
+>   the server, since only the VM's host can reach the port. Credentials that are sent are
+>   always checked.
+> - **Faster connection setup.** No multitransport (UDP) is offered, which the server does not
+>   implement and which the Hyper-V client took about 7 seconds to give up on.
+> - **Window resizing.** When a real output is shared, its video mode follows the size the
+>   client asks for (DisplayControl), exactly, using custom modes where needed. The original mode
+>   is restored on disconnect. A logon notification is sent after authentication, which Hyper-V
+>   needs before it allows resizing the window.
+> - **Protocol fixes.** Inclusive monitor coordinates in ResetGraphics, and the desktop is sent
+>   again when the client asks for it (Refresh Rect, output allowed again after Suppress Output).
+> - **File copy over the clipboard**, in both directions (FileGroupDescriptorW / FileContents).
+>   Files copied on the client are fetched into `~/.cache/krdpserver/clipboard` when they are
+>   copied (up to 2 GiB) and put on the clipboard as files.
+>
+> Hyper-V setup notes: enable the server with `VsockPort=3389` and `VsockTrustHost=true` in the
+> `[General]` group of `~/.config/krdpserverrc`. The VM's synthetic video device limits the
+> resolution; to allow larger window sizes, run on the host (with the VM off), for example:
+> `Set-VMVideo -VMName <vm> -HorizontalResolution 3840 -VerticalResolution 2160 -ResolutionType Maximum`.
+> Known client issue: shrinking the vmconnect window below about 200 pixels leaves it blank;
+> toggle Enhanced Session off and on to recover.
+
 # KRdp
 
 Library and examples for creating an RDP server.
