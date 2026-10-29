@@ -526,6 +526,11 @@ void RdpConnection::initialize()
     freerdp_settings_set_bool(settings, FreeRDP_FrameMarkerCommandEnabled, true);
     freerdp_settings_set_bool(settings, FreeRDP_SurfaceFrameMarkerEnabled, true);
 
+    // There is no UDP transport implementation, so don't ask the client to set one up: FreeRDP
+    // would wait for its answer, which takes the Hyper-V client about 7 seconds to give up on.
+    freerdp_settings_set_bool(settings, FreeRDP_SupportMultitransport, false);
+    freerdp_settings_set_uint32(settings, FreeRDP_MultitransportFlags, 0);
+
     freerdp_settings_set_bool(settings, FreeRDP_SupportMonitorLayoutPdu, true);
     freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, true);
 
