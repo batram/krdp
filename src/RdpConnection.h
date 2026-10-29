@@ -129,6 +129,7 @@ private:
     bool onCapabilities();
     bool onActivate();
     bool onPostConnect();
+    bool authenticateClient();
     bool onClose();
     bool onSuppressOutput(uint8_t allow);
 

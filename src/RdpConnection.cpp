@@ -23,6 +23,7 @@
 #include <freerdp/channels/wtsvc.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/server/cliprdr.h>
+#include <freerdp/session.h>
 
 #include <freerdp/channels/drdynvc.h>
 
@@ -723,6 +724,22 @@ bool RdpConnection::onPostConnect()
 {
     qCInfo(KRDP) << "New client connected:" << d->peer->hostname << freerdp_peer_os_major_type_string(d->peer) << freerdp_peer_os_minor_type_string(d->peer);
 
+    if (!authenticateClient()) {
+        return false;
+    }
+
+    // Tell the client that logon has completed. Hyper-V's enhanced session keeps the
+    // window fixed-size (not resizable) until it receives this, like xrdp sends after
+    // starting the session. [MS-RDPBCGR] 3.3.5.10.1
+    auto context = d->peer->context;
+    if (!context->update->SaveSessionInfo(context, INFO_TYPE_LOGON_PLAIN_NOTIFY, nullptr)) {
+        qCWarning(KRDP) << "Could not send the logon notification";
+    }
+    return true;
+}
+
+bool RdpConnection::authenticateClient()
+{
     rdpSettings *settings = d->peer->context->settings;
     const QString username = QString::fromLatin1(freerdp_settings_get_string(settings, FreeRDP_Username)).section(QLatin1Char('\\'), -1);
 
