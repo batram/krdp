@@ -742,10 +742,11 @@ void VideoStream::performReset(QSize newSize)
     resetGraphicsPdu.monitorCount = 1;
 
     MONITOR_DEF monitor = {};
+    // [MS-RDPBCGR] 2.2.1.3.6.1: the right and bottom coordinates are inclusive
     monitor.left = 0;
-    monitor.right = newSize.width();
+    monitor.right = newSize.width() - 1;
     monitor.top = 0;
-    monitor.bottom = newSize.height();
+    monitor.bottom = newSize.height() - 1;
     monitor.flags = MONITOR_PRIMARY;
     resetGraphicsPdu.monitorDefArray = &monitor;
     UINT status = d->gfxContext->ResetGraphics(d->gfxContext.get(), &resetGraphicsPdu);
