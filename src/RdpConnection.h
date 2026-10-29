@@ -67,8 +67,10 @@ public:
      * \param server The KRdp::Server instance this session is part of.
      * \param socketHandle A file handle to the socket this session should use
      *                     for communication.
+     * \param vsock Whether the socket is an AF_VSOCK (Hyper-V) connection,
+     *              which uses plain RDP security instead of TLS/NLA.
      */
-    explicit RdpConnection(Server *server, qintptr socketHandle);
+    explicit RdpConnection(Server *server, qintptr socketHandle, bool vsock = false);
     ~RdpConnection() override;
 
     /**

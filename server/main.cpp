@@ -58,6 +58,10 @@ int main(int argc, char **argv)
         {{u"p"_s, u"password"_s}, u"The password to use for login. Requires username to be passed as well."_s, u"password"_s},
         {u"address"_s, u"The address to listen on for connections. Defaults to 0.0.0.0"_s, u"address"_s},
         {u"port"_s, u"The port to use for connections. Defaults to 3389."_s, u"port"_s, u"3389"_s},
+        {u"vsock-port"_s,
+         u"Also listen on this AF_VSOCK port (3389 for Hyper-V enhanced sessions). Uses RDP security without encryption. Disabled by default."_s,
+         u"port"_s},
+        {u"vsock-trust-host"_s, u"Accept vsock clients that supply no credentials as the user running the server (Hyper-V sends an empty login)."_s},
         {u"certificate"_s, u"The TLS certificate file to use."_s, u"certificate"_s, u"server.crt"_s},
         {u"certificate-key"_s, u"The TLS certificate key to use."_s, u"certificate-key"_s, u"server.key"_s},
         {u"monitor"_s, u"The index of the monitor to use when streaming."_s, u"monitor"_s, u"-1"_s},
@@ -112,6 +116,9 @@ int main(int argc, char **argv)
 
     server.setTlsCertificate(certificate);
     server.setTlsCertificateKey(certificateKey);
+
+    server.setVsockPort(parserValueWithDefault(u"vsock-port", config->vsockPort()));
+    server.setVsockTrustHost(parser.isSet(u"vsock-trust-host"_s) || config->vsockTrustHost());
 
     // Use parsed username/pw if set
     if (parser.isSet(u"username"_s)) {

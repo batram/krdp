@@ -189,6 +189,32 @@ static int pamAuthenticate(const QString &user, const QString &password)
 }
 
 /**
+ * Verify a username and password against PAM (for the user running the server) and the configured users.
+ */
+static bool authenticate(const QString &username, const QString &password, bool usePam, const QList<User> &users)
+{
+    if (usePam) {
+        qCDebug(KRDP) << "Attempting authenticating user with PAM";
+        if (username == KUser().loginName() || KUser().loginName() == QStringLiteral("plasmalogin")) {
+            if (pamAuthenticate(username, password) >= 0) {
+                qCDebug(KRDP) << "PAM authentication succeeded for user" << username;
+                return true;
+            }
+        }
+    }
+    for (const auto &user : users) {
+        if (user.password.isEmpty()) {
+            continue;
+        }
+        if (user.name == username && user.password == password) {
+            qCDebug(KRDP) << "User" << username << "authenticated successfully";
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * FreeRDP callback for the capabilities event.
  */
 BOOL peerCapabilities(freerdp_peer *peer)
@@ -246,6 +272,7 @@ public:
     bool qualitySeeded = false;
 
     qintptr socketHandle;
+    bool vsock = false;
 
     std::unique_ptr<InputHandler> inputHandler;
     std::unique_ptr<VideoStream> videoStream;
@@ -276,12 +303,13 @@ public:
     QTemporaryFile samFile;
 };
 
-RdpConnection::RdpConnection(Server *server, qintptr socketHandle)
+RdpConnection::RdpConnection(Server *server, qintptr socketHandle, bool vsock)
     : QObject(nullptr)
     , d(std::make_unique<Private>())
 {
     d->server = server;
     d->socketHandle = socketHandle;
+    d->vsock = vsock;
 
     d->inputHandler = std::make_unique<InputHandler>(this);
     d->videoStream = std::make_unique<VideoStream>(this);
@@ -447,10 +475,22 @@ void RdpConnection::initialize()
     }
     freerdp_settings_set_pointer_len(settings, FreeRDP_RdpServerRsaKey, key, 1);
 
-    freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, false);
-    freerdp_settings_set_bool(settings, FreeRDP_TlsSecurity, usePamAuthentication);
-    freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, !usePamAuthentication);
-    freerdp_settings_set_bool(settings, FreeRDP_ExtSecurity, false);
+    if (d->vsock) {
+        // Hyper-V enhanced sessions run RDP over a vsock link without any TLS,
+        // regardless of what is negotiated, so use plain RDP security without
+        // encryption (like xrdp's security_layer=rdp, crypt_level=none).
+        freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, true);
+        freerdp_settings_set_bool(settings, FreeRDP_TlsSecurity, false);
+        freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, false);
+        freerdp_settings_set_bool(settings, FreeRDP_ExtSecurity, false);
+        freerdp_settings_set_uint32(settings, FreeRDP_EncryptionLevel, ENCRYPTION_LEVEL_NONE);
+        freerdp_settings_set_uint32(settings, FreeRDP_EncryptionMethods, ENCRYPTION_METHOD_NONE);
+    } else {
+        freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, false);
+        freerdp_settings_set_bool(settings, FreeRDP_TlsSecurity, usePamAuthentication);
+        freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, !usePamAuthentication);
+        freerdp_settings_set_bool(settings, FreeRDP_ExtSecurity, false);
+    }
 
     freerdp_settings_set_uint32(settings, FreeRDP_OsMajorType, OSMAJORTYPE_UNIX);
     // PSEUDO_XSERVER is apparently required for things to work properly.
@@ -681,30 +721,27 @@ bool RdpConnection::onPostConnect()
     rdpSettings *settings = d->peer->context->settings;
     const QString username = QString::fromLatin1(freerdp_settings_get_string(settings, FreeRDP_Username)).section(QLatin1Char('\\'), -1);
 
+    if (d->vsock) {
+        // Plain RDP security has no NLA, so the credentials from the Client Info PDU are all there is.
+        const QString password = QString::fromUtf8(freerdp_settings_get_string(settings, FreeRDP_Password));
+        if (username.isEmpty() && password.isEmpty()) {
+            if (d->server->vsockTrustHost()) {
+                qCInfo(KRDP) << "Accepting vsock client without credentials (vsock host is trusted)";
+                return true;
+            }
+            qCWarning(KRDP) << "Rejecting vsock client without credentials; start with --vsock-trust-host to accept the Hyper-V host";
+            return false;
+        }
+        return authenticate(username, password, d->server->usePAMAuthentication(), d->server->users());
+    }
+
     if (d->server->usePAMAuthentication()) {
         if (!freerdp_settings_set_bool(settings, FreeRDP_AutoLogonEnabled, true)) {
             return false;
         }
 
         const QString password = QString::fromLatin1(freerdp_settings_get_string(settings, FreeRDP_Password));
-        qCDebug(KRDP) << "Attempting authenticating user with PAM";
-        if (username == KUser().loginName() || KUser().loginName() == QStringLiteral("plasmalogin")) {
-            if (pamAuthenticate(username, password) >= 0) {
-                qCDebug(KRDP) << "PAM authentication succeeded for user" << username;
-                return true;
-            }
-        }
-        const auto users = d->server->users();
-        for (auto user : users) {
-            if (user.password.isEmpty()) {
-                continue;
-            }
-            if (user.name == username && user.password == password) {
-                qCDebug(KRDP) << "User" << username << "authenticated successfully";
-                return true;
-            }
-        }
-        return false;
+        return authenticate(username, password, true, d->server->users());
     } else {
         // In the NLA case the user has been authorised against the SAM database
         return true;

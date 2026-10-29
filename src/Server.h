@@ -76,6 +76,28 @@ public:
     void setPort(quint16 newPort);
 
     /**
+     * The AF_VSOCK port to additionally listen on, or 0 to disable (the default).
+     *
+     * This is the transport Hyper-V enhanced sessions use to reach a guest.
+     * Hyper-V does not do TLS over it, so connections accepted here use plain
+     * RDP security with no encryption; the link is only reachable from the host
+     * running the virtual machine.
+     */
+    quint32 vsockPort() const;
+    void setVsockPort(quint32 newPort);
+
+    /**
+     * Whether a vsock client that supplies no credentials is accepted as the
+     * user running the server.
+     *
+     * Hyper-V sends an empty login. Anyone able to reach the vsock port has the
+     * same access as the VM console, so this is an explicit opt-in. Credentials
+     * that are supplied are always verified.
+     */
+    bool vsockTrustHost() const;
+    void setVsockTrustHost(bool trust);
+
+    /**
      * The list of users allowed to log in to the server.
      *
      * At least one user is required for the server to work.
@@ -122,6 +144,9 @@ protected:
     void incomingConnection(qintptr handle) override;
 
 private:
+    void addConnection(qintptr handle, bool vsock);
+    bool startVsock();
+
     friend class RdpConnection;
     rdp_settings *rdpSettings() const;
 

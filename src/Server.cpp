@@ -7,6 +7,14 @@
 #include <vector>
 
 #include <QCoreApplication>
+#include <QSocketNotifier>
+
+#include <cerrno>
+#include <cstring>
+
+#include <linux/vm_sockets.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <freerdp/channels/channels.h>
 #include <freerdp/freerdp.h>
@@ -26,6 +34,11 @@ public:
 
     QHostAddress address = QHostAddress::LocalHost;
     quint16 port = 3389;
+
+    quint32 vsockPort = 0;
+    bool vsockTrustHost = false;
+    int vsockFd = -1;
+    std::unique_ptr<QSocketNotifier> vsockNotifier;
 
     QList<User> users;
     bool usePamAuthentication = false;
@@ -67,12 +80,63 @@ bool Server::start()
     d->settings = freerdp_settings_new(FREERDP_SETTINGS_SERVER_MODE);
 
     qCDebug(KRDP) << "Listening for connections on" << serverAddress() << serverPort();
+
+    if (d->vsockPort != 0 && !startVsock()) {
+        stop();
+        return false;
+    }
+    return true;
+}
+
+bool Server::startVsock()
+{
+    const int fd = ::socket(AF_VSOCK, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        qCCritical(KRDP) << "Unable to create vsock socket:" << strerror(errno);
+        return false;
+    }
+
+    sockaddr_vm addr{};
+    addr.svm_family = AF_VSOCK;
+    addr.svm_cid = VMADDR_CID_ANY;
+    addr.svm_port = d->vsockPort;
+    if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0 || ::listen(fd, 16) < 0) {
+        qCCritical(KRDP) << "Unable to listen for connections on vsock port" << d->vsockPort << ":" << strerror(errno);
+        ::close(fd);
+        return false;
+    }
+
+    d->vsockFd = fd;
+    d->vsockNotifier = std::make_unique<QSocketNotifier>(fd, QSocketNotifier::Read);
+    connect(d->vsockNotifier.get(), &QSocketNotifier::activated, this, [this]() {
+        while (true) {
+            sockaddr_vm peer{};
+            socklen_t len = sizeof(peer);
+            const int client = ::accept4(d->vsockFd, reinterpret_cast<sockaddr *>(&peer), &len, SOCK_NONBLOCK | SOCK_CLOEXEC);
+            if (client < 0) {
+                if (errno != EAGAIN && errno != EINTR) {
+                    qCWarning(KRDP) << "Failed to accept vsock connection:" << strerror(errno);
+                }
+                return;
+            }
+            qCDebug(KRDP) << "Accepted vsock connection from CID" << peer.svm_cid << "port" << peer.svm_port;
+            addConnection(client, true);
+        }
+    });
+
+    qCDebug(KRDP) << "Listening for connections on vsock port" << d->vsockPort << (d->vsockTrustHost ? "(trusting the host for empty logins)" : "");
     return true;
 }
 
 void Server::stop()
 {
     close();
+
+    d->vsockNotifier.reset();
+    if (d->vsockFd >= 0) {
+        ::close(d->vsockFd);
+        d->vsockFd = -1;
+    }
 
     if (d->settings) {
         freerdp_settings_free(d->settings);
@@ -106,6 +170,26 @@ void Server::setPort(quint16 newPort)
     }
 
     d->port = newPort;
+}
+
+quint32 Server::vsockPort() const
+{
+    return d->vsockPort;
+}
+
+void Server::setVsockPort(quint32 newPort)
+{
+    d->vsockPort = newPort;
+}
+
+bool Server::vsockTrustHost() const
+{
+    return d->vsockTrustHost;
+}
+
+void Server::setVsockTrustHost(bool trust)
+{
+    d->vsockTrustHost = trust;
 }
 
 QList<User> KRdp::Server::users() const
@@ -163,7 +247,12 @@ void Server::setTlsCertificateKey(const std::filesystem::path &newTlsCertificate
 
 void Server::incomingConnection(qintptr handle)
 {
-    auto session = std::make_unique<RdpConnection>(this, handle);
+    addConnection(handle, false);
+}
+
+void Server::addConnection(qintptr handle, bool vsock)
+{
+    auto session = std::make_unique<RdpConnection>(this, handle, vsock);
     auto sessionPtr = session.get();
     // queued: signal comes from the run thread, and it keeps the erase below from destroying the sender mid-emission
     connect(
