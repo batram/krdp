@@ -26,6 +26,7 @@ class VideoStreamSurface : public QObject
 {
 public:
     explicit VideoStreamSurface(VideoStream *stream);
+    ~VideoStreamSurface() override;
 
     void setActiveEncodingMode(VideoStream::EncodingMode mode, quint8 quality, int requestedFrameRate);
     void setStreamingEnabled(bool enabled);
@@ -41,7 +42,9 @@ public:
     std::unique_ptr<PipeWireSourceStream> sourceStream;
     DmaBufHandler dmaBufHandler;
     quint32 nodeId = 0;
+    // Kept to give each stream a duplicate, see duplicatePipeWireFd()
     int pipeWireFd = -1;
+    int duplicatePipeWireFd() const;
     quint64 objectSerial = quint64(-1);
     Surface surface;
     QSize size;

@@ -5,6 +5,9 @@
 
 #include "VideoStreamSurface.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <chrono>
 
 #include "krdp_logging.h"
@@ -18,6 +21,20 @@ VideoStreamSurface::VideoStreamSurface(VideoStream *stream)
     : QObject(stream)
     , m_stream(stream)
 {
+}
+
+VideoStreamSurface::~VideoStreamSurface()
+{
+    if (pipeWireFd > 0) {
+        close(pipeWireFd);
+    }
+}
+
+int VideoStreamSurface::duplicatePipeWireFd() const
+{
+    // PipeWire takes over the file descriptor it is given and closes it with the stream, so
+    // every stream needs one of its own, to be able to start a new one.
+    return pipeWireFd > 0 ? fcntl(pipeWireFd, F_DUPFD_CLOEXEC, 3) : -1;
 }
 
 void VideoStreamSurface::setActiveEncodingMode(VideoStream::EncodingMode mode, quint8 quality, int requestedFrameRate)
@@ -53,8 +70,8 @@ void VideoStreamSurface::setActiveEncodingMode(VideoStream::EncodingMode mode, q
         if (nodeId != 0) {
             encodedStream->setObjectSerial(objectSerial);
             encodedStream->setNodeId(nodeId);
-            if (pipeWireFd > 0) {
-                encodedStream->setFd(pipeWireFd);
+            if (const int fd = duplicatePipeWireFd(); fd > 0) {
+                encodedStream->setFd(fd);
             }
         }
         if (m_stream->streamingEnabled() && nodeId != 0) {
@@ -90,12 +107,12 @@ void VideoStreamSurface::setActiveEncodingMode(VideoStream::EncodingMode mode, q
             },
             Qt::QueuedConnection);
 
-        if (nodeId != 0 && pipeWireFd) {
+        if (nodeId != 0 && pipeWireFd > 0) {
             bool created = false;
             if (objectSerial != quint64(-1)) {
-                created = sourceStream->createStream(objectSerial, pipeWireFd);
+                created = sourceStream->createStream(objectSerial, duplicatePipeWireFd());
             } else {
-                created = sourceStream->createStream(nodeId, pipeWireFd);
+                created = sourceStream->createStream(nodeId, duplicatePipeWireFd());
             }
             if (!created) {
                 qCWarning(KRDP) << "Could not create PipeWire source stream" << sourceStream->error();
@@ -153,12 +170,15 @@ void VideoStreamSurface::setPipeWireSource(quint32 newNodeId, quint64 newObjectS
 {
     nodeId = newNodeId;
     objectSerial = newObjectSerial;
+    if (pipeWireFd > 0 && pipeWireFd != fd) {
+        close(pipeWireFd);
+    }
     pipeWireFd = fd;
 
     if (encodedStream) {
         encodedStream->setObjectSerial(objectSerial);
         encodedStream->setNodeId(nodeId);
-        encodedStream->setFd(pipeWireFd);
+        encodedStream->setFd(duplicatePipeWireFd());
         if (m_stream->streamingEnabled()) {
             encodedStream->start();
         }
@@ -170,9 +190,9 @@ void VideoStreamSurface::setPipeWireSource(quint32 newNodeId, quint64 newObjectS
 
     bool created = false;
     if (objectSerial != quint64(-1)) {
-        created = sourceStream->createStream(objectSerial, fd);
+        created = sourceStream->createStream(objectSerial, duplicatePipeWireFd());
     } else {
-        created = sourceStream->createStream(nodeId, fd);
+        created = sourceStream->createStream(nodeId, duplicatePipeWireFd());
     }
 
     if (!created) {

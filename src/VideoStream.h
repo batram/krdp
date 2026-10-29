@@ -100,6 +100,14 @@ public:
      * For when the size of the stream is known to be about to change, so the
      * client does not get frames of a size that is only there for a moment.
      */
+    /**
+     * Send the whole desktop again, as a new key frame.
+     *
+     * For when the client asks for an area to be sent again, or says it is looking
+     * at the desktop again after it had asked for it not to be sent. Can be called from any thread.
+     */
+    void requestFullRefresh();
+
     void setExpectedFrameSize(const QSize &size, std::chrono::milliseconds timeout);
     void setPipeWireSource(quint32 nodeId, quint64 objectSerial, int fd = -1);
 

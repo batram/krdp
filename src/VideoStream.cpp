@@ -171,6 +171,7 @@ public:
     // packed width and height of the only frames to accept for now, or 0
     std::atomic<quint64> expectedFrameSize{0};
     std::atomic<clk::steady_clock::rep> expectedFrameDeadline{0};
+    clk::steady_clock::time_point lastFullRefresh;
 
     std::atomic_int requestedFrameRate = 60;
     std::atomic<qsizetype> maxInFlight{MaximumInFlightFrames}; // recomputed from RTT on rttChanged
@@ -268,6 +269,33 @@ void VideoStream::setActiveEncodingMode(EncodingMode mode)
     }
     d->surface->setActiveEncodingMode(mode, d->quality, d->requestedFrameRate.load());
     d->activeEncodingMode = mode;
+}
+
+void VideoStream::requestFullRefresh()
+{
+    // called from the connection thread
+    QMetaObject::invokeMethod(
+        this,
+        [this]() {
+            if (!d->activeEncodingMode || !d->surface) {
+                return;
+            }
+            // RefreshRect tends to come in bursts
+            const auto now = clk::steady_clock::now();
+            if (d->lastFullRefresh != clk::steady_clock::time_point{} && now - d->lastFullRefresh < clk::milliseconds(300)) {
+                return;
+            }
+            d->lastFullRefresh = now;
+
+            qCDebug(KRDP) << "Sending the whole desktop again";
+            {
+                std::lock_guard lock(d->frameQueueMutex);
+                d->frameQueue.clear();
+            }
+            // A new stream starts with a key frame of the whole desktop.
+            d->surface->setActiveEncodingMode(*d->activeEncodingMode, d->quality, d->requestedFrameRate.load());
+        },
+        Qt::QueuedConnection);
 }
 
 void VideoStream::setSize(const QSize &newSize)

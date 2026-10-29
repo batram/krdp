@@ -254,6 +254,15 @@ BOOL peerActivate(freerdp_peer *peer)
     return FALSE;
 }
 
+BOOL refreshRect(rdpContext *context, BYTE count, const RECTANGLE_16 *areas)
+{
+    qCDebug(KRDP) << "Client requested a refresh of" << count << "areas, first:" << (count ? areas[0].left : 0) << (count ? areas[0].top : 0)
+                  << (count ? areas[0].right : 0) << (count ? areas[0].bottom : 0);
+    // [MS-RDPBCGR] 3.3.5.11.1: the server MUST send the graphics of those areas again
+    reinterpret_cast<PeerContext *>(context)->connection->videoStream()->requestFullRefresh();
+    return TRUE;
+}
+
 BOOL suppressOutput(rdpContext *context, uint8_t allow, const RECTANGLE_16 *)
 {
     auto peerContext = reinterpret_cast<PeerContext *>(context);
@@ -271,6 +280,8 @@ public:
 
     State state = State::Initial;
     bool qualitySeeded = false;
+    // whether the client asked for no output to be sent
+    bool outputSuppressed = false;
 
     qintptr socketHandle;
     bool vsock = false;
@@ -541,6 +552,7 @@ void RdpConnection::initialize()
     d->peer->PostConnect = peerPostConnect;
 
     d->peer->context->update->SuppressOutput = suppressOutput;
+    d->peer->context->update->RefreshRect = refreshRect;
 
     d->inputHandler->initialize(d->peer->context->input);
     context->inputHandler = d->inputHandler.get();
@@ -781,9 +793,16 @@ bool RdpConnection::onClose()
 
 bool RdpConnection::onSuppressOutput(uint8_t allow)
 {
+    qCDebug(KRDP) << "Client" << (allow ? "resumed" : "suppressed") << "output";
     if (allow) {
         d->videoStream->setEnabled(true);
+        if (d->outputSuppressed) {
+            d->outputSuppressed = false;
+            // [MS-RDPBCGR] 3.3.5.10: when output is allowed again, the server MUST send the desktop again
+            d->videoStream->requestFullRefresh();
+        }
     } else {
+        d->outputSuppressed = true;
         d->videoStream->setEnabled(false);
     }
 
