@@ -3,6 +3,7 @@
 
 #include "SessionController.h"
 #include "DisplayControl.h"
+#include "OutputResizer.h"
 #include "VideoStream.h"
 
 #include <QAction>
@@ -13,7 +14,12 @@
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QDBusReply>
+#include <QGuiApplication>
 #include <QMenu>
+#include <QScreen>
+#include <QTimer>
+
+#include <memory>
 
 #include <KLocalizedString>
 
@@ -74,14 +80,29 @@ public:
 
     void onVideoStreamEnabledChanged()
     {
-        connection->videoStream()->setStreamingEnabled(m_sessionStarted && connection->videoStream()->enabled());
+        connection->videoStream()->setStreamingEnabled(m_sessionStarted && !m_holdStreaming && connection->videoStream()->enabled());
     }
 
     void onSessionStarted()
     {
         m_sessionStarted = true;
         connection->videoStream()->setPipeWireSource(session->nodeId(), session->objectSerial(), session->takePipeWireFd());
-        connection->videoStream()->setStreamingEnabled(connection->videoStream()->enabled());
+        connection->videoStream()->setStreamingEnabled(!m_holdStreaming && connection->videoStream()->enabled());
+    }
+
+    /**
+     * Keep the video stream from starting, for example until the output has the size
+     * the client wants, so the first frames are not of a size that changes right after.
+     */
+    void holdStreaming(bool hold)
+    {
+        if (m_holdStreaming == hold) {
+            return;
+        }
+        m_holdStreaming = hold;
+        if (!hold && m_sessionStarted && connection) {
+            onVideoStreamEnabledChanged();
+        }
     }
 
     void onConnectionDestroyed()
@@ -96,11 +117,13 @@ public:
     QPointer<KRdp::RdpConnection> connection;
     KStatusNotifierItem *m_sni;
     bool m_sessionStarted = false;
+    bool m_holdStreaming = false;
 };
 
 SessionController::SessionController(KRdp::Server *server, SessionType sessionType)
     : m_server(server)
     , m_sessionType(sessionType)
+    , m_resizer(std::make_unique<OutputResizer>())
 {
     connect(m_server, &KRdp::Server::newConnectionCreated, this, &SessionController::onNewConnection);
     // Status notification item
@@ -231,9 +254,78 @@ void SessionController::onNewConnection(KRdp::RdpConnection *newConnection)
                 break;
             }
         }
+        if (!wrapper->session->virtualMonitor()) {
+            // A virtual monitor follows the requested size through the screencast stream. A real
+            // output has to have its video mode switched.
+            auto session = wrapper->session.get();
+            connect(newConnection->displayControl(),
+                    &KRdp::DisplayControl::requestedScreenSizeChanged,
+                    wrapper.get(),
+                    [this, session, owner = wrapper.get()](const QSize &size) {
+                        m_resizer->requestSize(owner, size, session->logicalSize());
+                    });
+
+            // The client tells us the desktop size it wants when it connects, but only sends
+            // a layout a moment later. Get to that size before the first frame instead of
+            // streaming a different one for a while.
+            wrapper->holdStreaming(true);
+            connect(session, &KRdp::AbstractSession::started, wrapper.get(), [this, session, wrapper = wrapper.get()]() {
+                const QSize size = wrapper->connection ? wrapper->connection->videoStream()->requestedSize() : QSize();
+                if (!size.isValid()) {
+                    wrapper->holdStreaming(false);
+                    return;
+                }
+                auto release = [wrapper]() {
+                    wrapper->holdStreaming(false);
+                };
+                // never keep the video waiting for long, whatever happens
+                QTimer::singleShot(1500, wrapper, release);
+                // If the mode changes, wait until the compositor has really switched, so the first
+                // frame is of the right size. Otherwise there is nothing to wait for.
+                auto switching = std::make_shared<bool>(false);
+                connect(
+                    m_resizer.get(),
+                    &OutputResizer::modeChanged,
+                    wrapper,
+                    [wrapper, release, switching](const QString &outputName, const QSize &newSize) {
+                        *switching = true;
+                        // frames of the old size may still come for a moment, don't show them
+                        wrapper->connection->videoStream()->setExpectedFrameSize(newSize, std::chrono::seconds(1));
+                        const auto screens = QGuiApplication::screens();
+                        QScreen *screen = nullptr;
+                        for (auto candidate : screens) {
+                            if (candidate->name() == outputName) {
+                                screen = candidate;
+                            }
+                        }
+                        if (!screen || screen->geometry().size() == newSize) {
+                            release();
+                            return;
+                        }
+                        connect(screen, &QScreen::geometryChanged, wrapper, [release, newSize](const QRect &geometry) {
+                            if (geometry.size() == newSize) {
+                                release();
+                            }
+                        });
+                    },
+                    Qt::SingleShotConnection);
+                connect(
+                    m_resizer.get(),
+                    &OutputResizer::idle,
+                    wrapper,
+                    [release, switching]() {
+                        if (!*switching) {
+                            release();
+                        }
+                    },
+                    Qt::SingleShotConnection);
+                m_resizer->requestSize(wrapper, size, session->logicalSize());
+            });
+        }
         wrapper->connection->videoStream()->setAdaptiveQuality(m_adaptiveQuality);
         wrapper->connection->videoStream()->setVideoQuality(m_quality.value());
         connect(wrapper.get(), &SessionWrapper::connectionDestroyed, this, [this](SessionWrapper *wrapper) {
+            m_resizer->release(wrapper);
             m_wrappers.erase(std::remove_if(m_wrappers.begin(),
                                             m_wrappers.end(),
                                             [wrapper](std::unique_ptr<SessionWrapper> &entry) {

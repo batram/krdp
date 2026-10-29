@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <memory>
 
 #include <QObject>
@@ -88,6 +89,18 @@ public:
     void setAdaptiveQuality(bool enabled);
     void seedQuality(quint8 quality);
     void setRequestedSize(const QSize &size);
+    /**
+     * The desktop size the client asked for, if it has told us yet.
+     */
+    QSize requestedSize() const;
+
+    /**
+     * Drop frames that are not of @p size, until one is or @p timeout has passed.
+     *
+     * For when the size of the stream is known to be about to change, so the
+     * client does not get frames of a size that is only there for a moment.
+     */
+    void setExpectedFrameSize(const QSize &size, std::chrono::milliseconds timeout);
     void setPipeWireSource(quint32 nodeId, quint64 objectSerial, int fd = -1);
 
     bool openChannel();

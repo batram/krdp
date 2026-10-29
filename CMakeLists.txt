@@ -43,6 +43,7 @@ find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED Core Concurrent Quick Gui Net
 find_package(Qt6GuiPrivate ${QT_MIN_VERSION} REQUIRED NO_MODULE)
 
 find_package(KF6 ${KF6_MIN_VERSION} REQUIRED COMPONENTS Config DBusAddons KCMUtils I18n CoreAddons StatusNotifierItem Crash GuiAddons)
+find_package(KF6Screen REQUIRED)
 
 find_package(FreeRDP 3.1 REQUIRED)
 find_package(WinPR 3.1 REQUIRED)

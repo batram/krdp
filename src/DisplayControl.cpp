@@ -22,6 +22,7 @@ static UINT display_control_receive_monitor_layout(DispServerContext *context, c
     }
 
     QSize monitorSize = QSize(pdu->Monitors[0].Width, pdu->Monitors[0].Height);
+    qCDebug(KRDP) << "Client requested a desktop size of" << monitorSize;
 
     auto c = static_cast<DisplayControl *>(context->custom);
     Q_EMIT c->requestedScreenSizeChanged(monitorSize);

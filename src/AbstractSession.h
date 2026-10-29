@@ -49,6 +49,15 @@ public:
     quint64 objectSerial() const;
 
     /**
+     * The size of the streamed output in logical (compositor) coordinates.
+     */
+    QSize logicalSize() const;
+    /**
+     * The virtual monitor this session streams, if it is not streaming a real output.
+     */
+    std::optional<VirtualMonitor> virtualMonitor() const;
+
+    /**
      * Set the system's clipboard data.
      *
      * The data is provided by the remote RDP client.
@@ -74,8 +83,6 @@ Q_SIGNALS:
 protected:
     bool isStarted() const;
     QSize size() const;
-    QSize logicalSize() const;
-    std::optional<VirtualMonitor> virtualMonitor() const;
     std::optional<int> activeStream() const;
 
     void setStarted(bool started);

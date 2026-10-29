@@ -168,6 +168,9 @@ public:
     QSet<uint32_t> pendingFrames;
     bool frameAcknowledgementSuspended = false;
     std::mutex pendingFramesMutex;
+    // packed width and height of the only frames to accept for now, or 0
+    std::atomic<quint64> expectedFrameSize{0};
+    std::atomic<clk::steady_clock::rep> expectedFrameDeadline{0};
 
     std::atomic_int requestedFrameRate = 60;
     std::atomic<qsizetype> maxInFlight{MaximumInFlightFrames}; // recomputed from RTT on rttChanged
@@ -409,6 +412,13 @@ void VideoStream::queueFrame(const KRdp::VideoFrame &frame)
     if (d->session->state() != RdpConnection::State::Streaming || !d->enabled) {
         return;
     }
+    if (const quint64 expected = d->expectedFrameSize.load()) {
+        const bool expired = clk::steady_clock::now().time_since_epoch().count() > d->expectedFrameDeadline.load();
+        if (!expired && expected != (quint64(frame.size.width()) << 32 | quint32(frame.size.height()))) {
+            return;
+        }
+        d->expectedFrameSize = 0;
+    }
     d->producedFrames.fetch_add(1, std::memory_order_relaxed);
 
     if (d->activeEncodingMode == EncodingMode::H264) {
@@ -494,6 +504,17 @@ void VideoStream::seedQuality(quint8 quality)
     const quint8 hi = std::max<quint8>(d->qualityCap, quint8(MinAdaptiveQuality));
     d->quality = std::clamp<quint8>(quality, quint8(MinAdaptiveQuality), hi);
     applyQuality();
+}
+
+QSize VideoStream::requestedSize() const
+{
+    return d->surface->requestedSize;
+}
+
+void VideoStream::setExpectedFrameSize(const QSize &size, std::chrono::milliseconds timeout)
+{
+    d->expectedFrameDeadline = (clk::steady_clock::now() + timeout).time_since_epoch().count();
+    d->expectedFrameSize = size.isValid() ? (quint64(size.width()) << 32 | quint32(size.height())) : 0;
 }
 
 void VideoStream::setRequestedSize(const QSize &size)
@@ -702,6 +723,7 @@ void VideoStream::destroySurface()
 
 void VideoStream::performReset(QSize newSize)
 {
+    qCDebug(KRDP) << "Resetting graphics to" << newSize;
     auto &surface = d->surface->surface;
     if (!d->gfxContext) {
         auto settings = d->session->rdpPeerContext()->settings;

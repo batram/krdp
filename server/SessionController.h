@@ -18,6 +18,7 @@ class RdpConnection;
 }
 
 class SessionWrapper;
+class OutputResizer;
 
 class SessionController : public QObject
 {
@@ -66,6 +67,8 @@ private:
     std::vector<std::unique_ptr<SessionWrapper>> m_wrappers;
 
     OperationMode m_operatingMode = OperationMode::SharedAccess;
+
+    std::unique_ptr<OutputResizer> m_resizer;
 
     KStatusNotifierItem *m_sni;
 };

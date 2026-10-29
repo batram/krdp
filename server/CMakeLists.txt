@@ -5,13 +5,13 @@ add_definitions(-DTRANSLATION_DOMAIN=\"krdpserver\")
 
 add_executable(krdpserver)
 
-target_sources(krdpserver PRIVATE main.cpp SessionController.cpp)
+target_sources(krdpserver PRIVATE main.cpp SessionController.cpp OutputResizer.cpp)
 
 kconfig_target_kcfg_file(krdpserver FILE krdpserversettings.kcfg CLASS_NAME ServerConfig SINGLETON)
 
 target_include_directories(krdpserver PRIVATE ${CMAKE_BINARY_DIR})
 
-target_link_libraries(krdpserver PRIVATE Qt6::Gui KF6::CoreAddons KF6::ConfigGui KF6::DBusAddons KF6::Crash KRdp qt6keychain KF6::StatusNotifierItem KF6::I18n)
+target_link_libraries(krdpserver PRIVATE Qt6::Gui KF6::CoreAddons KF6::ConfigGui KF6::DBusAddons KF6::Crash KRdp qt6keychain KF6::StatusNotifierItem KF6::I18n KF6::Screen)
 
 if (BUILD_PLASMA_SESSION)
     target_compile_definitions(krdpserver PRIVATE -DWITH_PLASMA_SESSION)
